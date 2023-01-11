@@ -18,6 +18,10 @@ SIN_LEFT_THETA = 2 * sin(pi / 4)
 SIN_UP_THETA = sin(pi / 6)
 
 def pixel_to_3d_coordinate(cameraMatrix, rotation_mat, translation_vec, pixel_point):
+    """levantann321@gmail.com
+    This function input a 2d pixel coordinate point and calculate the corresponding 3d object coordinate of that
+    point. Necessary information are internal camera matrix, rotation matrix and translation vector from
+    3d camera coordinate to 3d object coordinate"""
     pixelPointVector = np.array([pixel_point[0], pixel_point[1], 1]).astype(int)
     #np.transpose(pixelPointVector)
     #print(pixelPointVector)
@@ -30,7 +34,7 @@ def pixel_to_3d_coordinate(cameraMatrix, rotation_mat, translation_vec, pixel_po
     worldPointVector = s*leftHandSide - rightHandSide
     #print(worldPointVector)
     return worldPointVector
-"""function pixel_to_3d_coordinate doesnt work properly"""
+
 def calculate_3d_gaze_self(frame,cameraMatrix, rotation_vec, translation_vec, eye_centers_pixel, pupil_pixel):
     rotation_mat,_ = cv2.Rodrigues(rotation_vec)
     #print("eye center pixel: ", eye_centers_pixel)
@@ -43,69 +47,15 @@ def calculate_3d_gaze_self(frame,cameraMatrix, rotation_vec, translation_vec, ey
     pupil_3D[1] = pixel_to_3d_coordinate(cameraMatrix, rotation_mat, translation_vec, pupil_pixel[1])
 
     eyeball_centers_3D = eye_centers_3D - np.array([[0, 0, 12.5],[0 , 0, 12.5]])
-    eyeball_centers_pixel = np.empty([2,2])
-    eyeball_centers_pixel[0], _ = cv2.projectPoints(eyeball_centers_3D[0], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
-    eyeball_centers_pixel[1], _ = cv2.projectPoints(eyeball_centers_3D[1], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
     #eyeball_centers_pixel = eyeball_centers_pixel.transpose((1,0,2)).reshape(2,2).astype(np.int32)
     #print(eyeball_centers_pixel)
-    extend_point_3D = pupil_3D + (pupil_3D - eyeball_centers_3D)/12.5*30
-    extend_point_pixel=np.empty([2,2])
-    extend_point_pixel[0],_ = cv2.projectPoints(extend_point_3D[0], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
-    extend_point_pixel[1],_ = cv2.projectPoints(extend_point_3D[1], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
-    for i in range(2):
-        cv2.circle(frame, eyeball_centers_pixel[i].astype(int), radius=1, color=(225, 255, 0), thickness=1)
-        cv2.circle(frame, pupil_pixel[i].astype(int), radius = 1, color= (0,255,255), thickness=1)
-        cv2.line(frame, eyeball_centers_pixel[i].astype(int), extend_point_pixel[i].astype(int), color=(225, 255, 0), thickness = 1)
 
     gaze_3D = pupil_3D - eyeball_centers_3D
     #print(gaze_3D)
-    return gaze_3D
-"""The calculate_3d_gaze_self function"""
+    return gaze_3D, eyeball_centers_3D, pupil_3D
 
-def calculate_3d_gaze(frame, poi, scale=256):
-    starts, ends, pupils, centers = poi
-    #the starts points are the right corner of both eye
-    #the ends points are the left corner of both eye
-
-    eye_length = norm(starts - ends, axis=1)
-    ic_distance = norm(pupils - centers, axis=1)
-    zc_distance = norm(pupils - starts, axis=1)
-
-    s0 = (starts[:, 1] - ends[:, 1]) * pupils[:, 0] #difference of the eye corner in the y direction multiply by the x coordinate of the pupil of both eye
-    #cv2.circle(frame, tuple(pupils[0,:].astype(int)), 1, (0,255,255), 1, cv2.LINE_AA)
-    s1 = (starts[:, 0] - ends[:, 0]) * pupils[:, 1] #difference of the eye in the x direction multiply by the y coordinate of the pupil of both eye
-    s2 = starts[:, 0] * ends[:, 1] #product of the x coordinate of the right corner of both eye with the y coordinate of the left corner of both eye
-    s3 = starts[:, 1] * ends[:, 0] #product of the y coordintate of the right corner of both eye with the x coordinate of the left corner of both eye
-
-    delta_y = (s0 - s1 + s2 - s3) / eye_length / 2
-    delta_x = np.sqrt(abs(ic_distance**2 - delta_y**2))
-    delta = np.array((delta_x * SIN_LEFT_THETA,
-                      delta_y * SIN_UP_THETA))
-    delta /= eye_length
-    theta, pha = np.arcsin(delta)  #delta = [[sin_theta_right_eye sin_theta_left_eye][sin_pha_right_eye sin_pha_left_eye]]
-    #draw center of pupils
-    #cv2.circle(frame, ((pupils[0,0]).astype(int), (pupils[0,1]).astype(int)), 1, (0,255,0), 1, cv2.LINE_AA)
-    #cv2.circle(frame, ((pupils[1,0]).astype(int), (pupils[1,1]).astype(int)), 1, (0,255,0), 1, cv2.LINE_AA)
-
-    # print(f"THETA:{180 * theta / pi}, PHA:{180 * pha / pi}")
-    # delta[0, abs(theta) < 0.1] = 0
-    # delta[1, abs(pha) < 0.03] = 0
-
-    inv_judge = zc_distance**2 - delta_y**2 < eye_length**2 / 4
-
-    delta[0, inv_judge] *= -1
-    theta[inv_judge] *= -1
-    delta *= scale
-    #cv2.circle(frame, ((pupils[0,0] - delta[0][0]).astype(int), (pupils[0,1]-delta[1][0]).astype(int)), 1, (0,255,255), 1, cv2.LINE_AA)
-    #cv2.circle(frame, ((pupils[1,0] - delta[0][1]).astype(int), (pupils[1,1]-delta[1][1]).astype(int)), 1, (0,255,255), 1, cv2.LINE_AA)
-
-    # cv2.circle(frame, tuple(center.astype(int)), 1, (0, 0, 255), -1)
-    return theta, pha, delta.T
-
-
-def draw_sticker(src, offset, pupils, landmarks,
-                 blink_thd=0.22,
-                 arrow_color=(0, 125, 255), copy=False):
+def draw_sticker(src, eyeball_centers_3D, pupil_pixel, pupil_3D, rotation_vec, translation_vec, cameraMatrix, landmarks, blink_thd=0.3,
+                    arrow_color=(0, 125, 255), copy=False):
     if copy:
         src = src.copy()
 
@@ -115,15 +65,28 @@ def draw_sticker(src, offset, pupils, landmarks,
     right_eye_hight = landmarks[87, 1] - landmarks[94, 1]
     right_eye_width = landmarks[93, 0] - landmarks[89, 0]
 
+    eyeball_centers_pixel = np.empty([2,2])
+    eyeball_centers_pixel[0], _ = cv2.projectPoints(eyeball_centers_3D[0], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
+    eyeball_centers_pixel[1], _ = cv2.projectPoints(eyeball_centers_3D[1], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
+
+    extend_point_3D = pupil_3D + (pupil_3D - eyeball_centers_3D)/12.5*30
+    extend_point_pixel=np.empty([2,2])
+    extend_point_pixel[0],_ = cv2.projectPoints(extend_point_3D[0], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
+    extend_point_pixel[1],_ = cv2.projectPoints(extend_point_3D[1], rotation_vec, translation_vec, cameraMatrix, distCoeffs = None)
+
     for mark in landmarks.reshape(-1, 2).astype(int):
         cv2.circle(src, tuple(mark), radius=1,
-                   color=(125, 255, 125), thickness=-1)
+                    color=(125, 255, 125), thickness=-1)
 
-    if left_eye_hight / left_eye_width > blink_thd: # when eye close, eye height become small. If eye height/eye width smaller than a threshold then eye is blinking
-        cv2.arrowedLine(src, tuple(pupils[0].astype(int)),tuple((offset+pupils[0]).astype(int)), arrow_color, 2)
+    if left_eye_hight / left_eye_width > blink_thd:
+        cv2.circle(src, eyeball_centers_pixel[0].astype(int), radius=1, color=(225, 255, 0), thickness=1)
+        cv2.circle(src, pupil_pixel[0].astype(int), radius = 1, color= (0,255,255), thickness=1)
+        cv2.line(src, eyeball_centers_pixel[0].astype(int), extend_point_pixel[0].astype(int), color=(0, 255, 255), thickness = 1)
 
     if right_eye_hight / right_eye_width > blink_thd:
-        cv2.arrowedLine(src, tuple(pupils[1].astype(int)),tuple((offset+pupils[1]).astype(int)), arrow_color, 2)
+        cv2.circle(src, eyeball_centers_pixel[1].astype(int), radius=1, color=(225, 255, 0), thickness=1)
+        cv2.circle(src, pupil_pixel[1].astype(int), radius = 1, color= (0,255,255), thickness=1)
+        cv2.line(src, eyeball_centers_pixel[1].astype(int), extend_point_pixel[1].astype(int), color=(0, 255, 255), thickness = 1)
 
     return src
 
@@ -166,42 +129,12 @@ def main(video, gpu_ctx=-1):
             pupils = np.array([pupil_left, pupil_right])
 
             poi = landmarks[[35, 89]], landmarks[[39, 93]], pupils, eye_centers
-            theta, pha, delta = calculate_3d_gaze(frame, poi)
             #print(eye_centers[0], type(eye_centers))
-            gaze_3D = calculate_3d_gaze_self(frame, hp.cam_matrix, rotation_vec, translation_vec, eye_centers, pupils)
+            gaze_3D, eyeball_centers_3D, pupil_3D = calculate_3d_gaze_self(frame, hp.cam_matrix, rotation_vec, translation_vec, eye_centers, pupils)
 
-            if yaw > 30:#If the head turn to the left direction pass 30 degree, use theta and pha of the right eye as theta and pha for the gaze direction
-                end_mean = delta[0]
-            elif yaw < -30: #If the head turn to the right direction pass 30 degree, use theta and pha of the left eye as theta and pha for the gaze direction
-                end_mean = delta[1]
-            else: #if head is relatively straigth to the camera, then use the average theta and pha of both eye as gaze direction
-                end_mean = np.average(delta, axis=0)
-
-
-            if end_mean[0] < 0:
-                zeta = arctan(end_mean[1] / end_mean[0]) + pi
-            else:
-                zeta = arctan(end_mean[1] / (end_mean[0] + 1e-7))
-
-            # print(zeta * 180 / pi)
-            # print(zeta)
-            if roll < 0:
-                roll += 180
-            else:
-                roll -= 180
-            # roll after if statement change. Negative value when head tilting right. The unit is degree
-            real_angle = zeta + roll * pi / 180
-            #real_angle = zeta
-
-            # print("end mean:", end_mean)
-            # print(roll, real_angle * 180 / pi)
-
-            R = norm(end_mean)
-            offset = R * cos(real_angle), R * sin(real_angle)
             landmarks[[38, 92]] = landmarks[[34, 88]] = eye_centers
-            #print(eye_centers)
 
-            draw_sticker(frame, offset, pupils, landmarks)
+            draw_sticker(frame, eyeball_centers_3D, pupils, pupil_3D, rotation_vec, translation_vec, hp.cam_matrix,landmarks)
             gs.draw_eye_markers(eye_markers, frame, thickness=1)
             #print(landmarks[[39]].reshape(2))
 
